@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clearing Automation: Elimination of Manual Cross-Booking</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #080c18;
+    --surface: rgba(255,255,255,0.04);
+    --border: rgba(255,255,255,0.09);
+    --text: #e8eaf0;
+    --muted: rgba(232,234,240,0.45);
+    --red: #f87070;
+    --green: #5ddc9a;
+    --amber: #f9c84a;
+    --blue: #8bbcff;
+    --purple: #c4a4ff;
+    --red-bg: rgba(248,112,112,0.1);
+    --green-bg: rgba(93,220,154,0.1);
+    --amber-bg: rgba(249,200,74,0.1);
+    --blue-bg: rgba(139,188,255,0.1);
+    --red-border: rgba(248,112,112,0.35);
+    --green-border: rgba(93,220,154,0.35);
+    --amber-border: rgba(249,200,74,0.35);
+    --blue-border: rgba(139,188,255,0.35);
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  #progress-bar {
+    position: fixed; top: 0; left: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--blue), var(--green));
+    transition: width 0.5s ease;
+    z-index: 1000;
+    border-radius: 0 2px 2px 0;
+  }
+
+  #counter {
+    position: fixed; top: 18px; right: 24px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; color: var(--muted);
+    letter-spacing: 0.08em; z-index: 100;
+  }
+
+  #dots {
+    position: fixed; bottom: 22px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; gap: 8px; align-items: center;
+    z-index: 100;
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: rgba(255,255,255,0.18);
+    cursor: pointer; transition: all 0.3s; border: none;
+  }
+  .dot.active { background: var(--blue); width: 22px; border-radius: 4px; }
+
+  .nav-btn {
+    position: fixed; top: 50%; transform: translateY(-50%);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    color: var(--text); width: 40px; height: 40px;
+    border-radius: 50%; font-size: 20px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s, opacity 0.2s;
+    z-index: 100; opacity: 0.35;
+  }
+  .nav-btn:hover { background: rgba(255,255,255,0.12); opacity: 1; }
+  #btn-prev { left: 14px; }
+  #btn-next { right: 14px; }
+
+  #kb-hint {
+    position: fixed; bottom: 48px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px; color: var(--muted);
+    letter-spacing: 0.06em; opacity: 1;
+    transition: opacity 1.2s; white-space: nowrap;
+  }
+  #kb-hint.hidden { opacity: 0; }
+
+  #stage { width: 100vw; height: 100vh; position: relative; }
+
+  .scene {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    opacity: 0; transform: translateX(50px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    pointer-events: none;
+    padding: 56px 72px 72px;
+  }
+  .scene.active { opacity: 1; transform: translateX(0); pointer-events: all; }
+  .scene.exit-left { opacity: 0; transform: translateX(-50px); }
+
+  .scene-tag {
+    position: absolute; top: 20px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--muted);
+    white-space: nowrap;
+  }
+
+  /* meta strip */
+  .meta-strip {
+    position: absolute; top: 14px; left: 20px;
+    display: flex; gap: 16px; align-items: center;
+  }
+  .meta-pill {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px; color: var(--muted);
+    letter-spacing: 0.06em;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 4px; padding: 2px 8px;
+  }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    border-radius: 20px; font-family: 'DM Mono', monospace;
+    font-size: 11px; font-weight: 500; padding: 4px 13px;
+    letter-spacing: 0.03em;
+  }
+  .chip.red   { background: var(--red-bg);   border: 1px solid var(--red-border);   color: var(--red); }
+  .chip.green { background: var(--green-bg); border: 1px solid var(--green-border); color: var(--green); }
+  .chip.blue  { background: var(--blue-bg);  border: 1px solid var(--blue-border);  color: var(--blue); }
+  .chip.amber { background: var(--amber-bg); border: 1px solid var(--amber-border); color: var(--amber); }
+
+  .node {
+    border-radius: 14px; border: 1px solid;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 6px; padding: 16px 20px;
+  }
+  .node.blue   { border-color: var(--blue-border);  background: var(--blue-bg); }
+  .node.green  { border-color: var(--green-border); background: var(--green-bg); }
+  .node.red    { border-color: var(--red-border);   background: var(--red-bg); }
+  .node.amber  { border-color: var(--amber-border); background: var(--amber-bg); }
+  .node.dim    { border-color: var(--border); background: var(--surface); opacity: 0.28; }
+  .node-title  { font-size: 13px; font-weight: 600; text-align: center; line-height: 1.35; }
+  .node-sub    { font-size: 10px; opacity: 0.55; font-family: 'DM Mono', monospace; text-align: center; }
+  .node-icon   { font-size: 26px; line-height: 1; }
+
+  /* ── S0 TITLE ── */
+  #s0 .title-wrap { text-align: center; }
+  #s0 .eyebrow { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--blue); margin-bottom: 14px; }
+  #s0 .big { font-size: clamp(26px, 3.8vw, 46px); font-weight: 700; letter-spacing: -1px; line-height: 1.15; }
+  #s0 .big span.r { color: var(--red); }
+  #s0 .big span.g { color: var(--green); }
+  #s0 .accent-line { width: 80px; height: 3px; background: linear-gradient(90deg, var(--red), var(--blue)); border-radius: 2px; margin: 20px auto; }
+  #s0 .sub { font-size: 13px; color: var(--muted); letter-spacing: 0.06em; }
+  #s0 .tags { display: flex; gap: 10px; margin-top: 28px; flex-wrap: wrap; justify-content: center; }
+  #s0 .meta-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px; margin-top: 28px; width: 100%; max-width: 640px;
+  }
+  #s0 .meta-card {
+    border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface); padding: 10px 14px;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  #s0 .mc-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+  #s0 .mc-val   { font-size: 12px; font-family: 'DM Mono', monospace; color: var(--text); }
+
+  /* ── S1 PROBLEM ── */
+  #s1 .flow-wrap { display: flex; align-items: center; gap: 0; width: 100%; max-width: 860px; }
+  #s1 .isin-box {
+    width: 190px; flex-shrink: 0; border-radius: 14px;
+    border: 1px solid var(--blue-border); background: var(--blue-bg);
+    padding: 18px 14px; display: flex; flex-direction: column;
+    align-items: center; gap: 8px;
+  }
+  #s1 .isin-label { font-size: 10px; color: var(--blue); letter-spacing: 0.1em; text-transform: uppercase; }
+  #s1 .isin-tags  { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+  #s1 .isin-tag   { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--blue); background: rgba(139,188,255,0.08); border: 1px solid var(--blue-border); border-radius: 5px; padding: 3px 8px; text-align: center; }
+
+  #s1 .arrows-col { flex: 1; display: flex; flex-direction: column; gap: 32px; padding: 0 16px; }
+  #s1 .arrow-row  { display: flex; align-items: center; position: relative; }
+  #s1 .arrow-line { flex: 1; height: 2px; position: relative; }
+  #s1 .arrow-line.correct { background: linear-gradient(90deg, transparent, rgba(93,220,154,0.25), rgba(93,220,154,0.45)); }
+  #s1 .arrow-line.wrong   { background: linear-gradient(90deg, transparent, rgba(248,112,112,0.45), rgba(248,112,112,0.8)); }
+  #s1 .arrow-line::after  { content: ''; position: absolute; right: -1px; top: -6px; border: 7px solid transparent; }
+  #s1 .arrow-line.correct::after { border-left-color: rgba(93,220,154,0.5); }
+  #s1 .arrow-line.wrong::after   { border-left-color: rgba(248,112,112,0.85); }
+  #s1 .a-label { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 9px; font-family: 'DM Mono', monospace; white-space: nowrap; }
+
+  #s1 .nostros { display: flex; flex-direction: column; gap: 20px; }
+  #s1 .problem-bullets {
+    margin-top: 24px; display: flex; flex-direction: column; gap: 8px;
+    max-width: 860px; width: 100%;
+  }
+  #s1 .pb {
+    display: flex; align-items: flex-start; gap: 10px;
+    background: var(--red-bg); border: 1px solid var(--red-border);
+    border-radius: 8px; padding: 9px 14px; font-size: 12px; line-height: 1.5;
+  }
+  #s1 .pb-icon { flex-shrink: 0; margin-top: 1px; }
+
+  /* ── S2 WORKAROUND ── */
+  #s2 .wa-wrap { display: flex; align-items: center; gap: 32px; width: 100%; max-width: 900px; }
+  #s2 .nostro-col { display: flex; flex-direction: column; gap: 16px; flex-shrink: 0; }
+  #s2 .bridge { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 160px; flex-shrink: 0; width: 24px; }
+  #s2 .bridge-line { width: 2px; flex: 1; background: repeating-linear-gradient(180deg, var(--amber) 0, var(--amber) 6px, transparent 6px, transparent 12px); }
+  #s2 .h-line { height: 2px; width: 28px; flex-shrink: 0; background: repeating-linear-gradient(90deg, var(--amber) 0, var(--amber) 6px, transparent 6px, transparent 12px); }
+  #s2 .cost-box {
+    flex: 1; border-radius: 16px; border: 1px solid var(--amber-border);
+    background: var(--amber-bg); padding: 28px 28px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  #s2 .cost-title { font-size: 11px; color: var(--amber); text-transform: uppercase; letter-spacing: 0.1em; }
+  #s2 .cost-big   { font-size: 58px; font-weight: 700; color: var(--amber); line-height: 1; font-family: 'DM Mono', monospace; }
+  #s2 .cost-unit  { font-size: 11px; color: var(--amber); opacity: 0.65; letter-spacing: 0.08em; text-transform: uppercase; }
+  #s2 .cost-div   { width: 36px; height: 1px; background: var(--amber-border); }
+  #s2 .fte-badge  { font-size: 28px; font-weight: 700; color: var(--amber); font-family: 'DM Mono', monospace; }
+  #s2 .cost-detail { font-size: 11px; color: var(--muted); text-align: center; line-height: 1.65; }
+
+  #s2 .vol-box {
+    border-radius: 14px; border: 1px solid var(--border);
+    background: var(--surface); padding: 18px 20px;
+    display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; width: 200px;
+  }
+  #s2 .vol-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+  #s2 .vol-bars  { display: flex; align-items: flex-end; gap: 6px; height: 70px; }
+  #s2 .bar-wrap  { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
+  #s2 .bar       { width: 100%; border-radius: 3px 3px 0 0; }
+  #s2 .bar-mon   { font-size: 8px; color: var(--muted); font-family: 'DM Mono', monospace; }
+  #s2 .bar-val   { font-size: 8px; font-family: 'DM Mono', monospace; }
+
+  /* ── S3 FIX ── */
+  #s3 .steps { display: flex; align-items: flex-start; gap: 0; width: 100%; max-width: 920px; }
+  #s3 .step  { display: flex; flex-direction: column; align-items: center; gap: 12px; flex: 1; }
+  #s3 .conn-h { flex: 0 0 28px; margin-top: 24px; }
+  #s3 .conn-h .line { height: 2px; width: 100%; background: var(--border); }
+  #s3 .step-icon { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; border: 1px solid; }
+  #s3 .step-icon.blue   { border-color: var(--blue-border);   background: var(--blue-bg); }
+  #s3 .step-icon.amber  { border-color: var(--amber-border);  background: var(--amber-bg); }
+  #s3 .step-icon.purple { border-color: rgba(196,164,255,0.35); background: rgba(196,164,255,0.08); }
+  #s3 .step-icon.green  { border-color: var(--green-border);  background: var(--green-bg); }
+  #s3 .step-label { font-size: 12px; font-weight: 600; text-align: center; line-height: 1.4; }
+  #s3 .step-sub   { font-size: 10px; color: var(--muted); text-align: center; line-height: 1.5; max-width: 130px; }
+  #s3 .fix-banner { margin-top: 30px; background: var(--green-bg); border: 1px solid var(--green-border); border-radius: 10px; padding: 12px 32px; font-size: 13px; color: var(--green); text-align: center; max-width: 680px; }
+  #s3 .sol-bullets { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 860px; }
+  #s3 .sol-chip { border-radius: 6px; border: 1px solid var(--green-border); background: var(--green-bg); color: var(--green); font-size: 10px; padding: 5px 12px; line-height: 1.4; text-align: center; }
+
+  .step-item { opacity: 0; transform: translateY(16px); transition: opacity 0.5s, transform 0.5s; }
+  .step-item.show { opacity: 1; transform: translateY(0); }
+
+  /* ── S4 AFTER ── */
+  #s4 .flow-wrap { display: flex; align-items: center; gap: 0; width: 100%; max-width: 860px; }
+  #s4 .isin-box { width: 190px; flex-shrink: 0; border-radius: 14px; border: 1px solid var(--green-border); background: var(--green-bg); padding: 18px 14px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+  /* ── S5 CHART ── */
+  #s5 .chart-wrap { width: 100%; max-width: 680px; }
+  #s5 canvas { display: block; }
+  #s5 .chart-note { margin-top: 16px; font-size: 11px; color: var(--muted); text-align: center; }
+
+  /* ── S6 RESULTS ── */
+  #s6 .result-super { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  #s6 .result-head  { font-size: clamp(20px, 3vw, 34px); font-weight: 700; letter-spacing: -0.5px; text-align: center; margin-bottom: 28px; }
+  #s6 .result-head span { color: var(--green); }
+  #s6 .cards { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
+  #s6 .rcard { width: 170px; border-radius: 16px; border: 1px solid; padding: 26px 18px; display: flex; flex-direction: column; align-items: center; gap: 8px; opacity: 0; transform: translateY(20px); transition: opacity 0.5s, transform 0.5s; }
+  #s6 .rcard.show { opacity: 1; transform: translateY(0); }
+  #s6 .rcard.green { border-color: var(--green-border); background: var(--green-bg); }
+  #s6 .rcard.amber { border-color: var(--amber-border); background: var(--amber-bg); }
+  #s6 .rcard.blue  { border-color: var(--blue-border);  background: var(--blue-bg); }
+  #s6 .rcard.red   { border-color: var(--red-border);   background: var(--red-bg); }
+  #s6 .card-val    { font-size: 38px; font-weight: 700; font-family: 'DM Mono', monospace; line-height: 1; }
+  #s6 .card-val.green { color: var(--green); }
+  #s6 .card-val.amber { color: var(--amber); }
+  #s6 .card-val.blue  { color: var(--blue); }
+  #s6 .card-val.red   { color: var(--red); }
+  #s6 .card-label { font-size: 10px; text-align: center; color: var(--muted); line-height: 1.5; text-transform: uppercase; letter-spacing: 0.06em; }
+  #s6 .client-quote { margin-top: 22px; max-width: 680px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); padding: 14px 20px; font-size: 12px; color: var(--muted); line-height: 1.65; text-align: center; opacity: 0; transition: opacity 0.8s 0.9s; }
+  #s6 .client-quote.show { opacity: 1; }
+  #s6 .client-name { color: var(--blue); font-weight: 600; margin-top: 8px; font-size: 11px; }
+
+  /* PARTICLES */
+  @keyframes tradeWrong { 0%{left:200px;top:50%;opacity:0} 5%{opacity:1} 50%{left:57%;top:68%;opacity:1} 90%{left:calc(57% + 85px);top:68%;opacity:1} 100%{left:calc(57% + 85px);top:68%;opacity:0} }
+  @keyframes tradeFaint { 0%{left:200px;top:50%;opacity:0} 5%{opacity:0.35} 50%{left:57%;top:30%;opacity:0.35} 90%{left:calc(57% + 85px);top:30%;opacity:0.35} 100%{left:calc(57% + 85px);top:30%;opacity:0} }
+  @keyframes tradeGood  { 0%{left:200px;top:50%;opacity:0} 5%{opacity:1} 50%{left:57%;top:30%;opacity:1} 90%{left:calc(57% + 85px);top:30%;opacity:1} 100%{left:calc(57% + 85px);top:30%;opacity:0} }
+  @keyframes tradeGood2 { 0%{left:200px;top:50%;opacity:0} 5%{opacity:1} 50%{left:57%;top:34%;opacity:1} 90%{left:calc(57% + 85px);top:34%;opacity:1} 100%{left:calc(57% + 85px);top:34%;opacity:0} }
+  @keyframes crossUp   { 0%{top:68%;left:20%;opacity:0} 10%{opacity:1} 50%{top:40%;left:20%;opacity:1} 90%{opacity:1} 100%{top:40%;left:20%;opacity:0} }
+  @keyframes crossDown { 0%{top:30%;left:24%;opacity:0} 10%{opacity:1} 50%{top:60%;left:24%;opacity:1} 90%{opacity:1} 100%{top:60%;left:24%;opacity:0} }
+  .particle { position: absolute; width: 10px; height: 10px; border-radius: 50%; pointer-events: none; }
+  .p-wrong  { background: var(--red);   animation: tradeWrong 2.4s ease-in-out infinite; }
+  .p-faint  { background: var(--green); animation: tradeFaint 2.4s ease-in-out 0.5s infinite; }
+  .p-good   { background: var(--green); animation: tradeGood  1.8s ease-in-out infinite; }
+  .p-good2  { background: var(--green); animation: tradeGood2 1.8s ease-in-out 0.65s infinite; }
+  .p-cross-a { background: var(--amber); animation: crossUp   2.2s ease-in-out infinite; }
+  .p-cross-b { background: var(--amber); animation: crossDown 2.2s ease-in-out 0.7s infinite; }
+</style>
+</head>
+<body>
+
+<div id="progress-bar" style="width:0%"></div>
+<div id="counter">1 / 7</div>
+
+<button class="nav-btn" id="btn-prev">&#8249;</button>
+<button class="nav-btn" id="btn-next">&#8250;</button>
+<div id="kb-hint">← → arrow keys &nbsp;·&nbsp; space to advance</div>
+
+<div id="dots">
+  <button class="dot active" onclick="go(0)"></button>
+  <button class="dot" onclick="go(1)"></button>
+  <button class="dot" onclick="go(2)"></button>
+  <button class="dot" onclick="go(3)"></button>
+  <button class="dot" onclick="go(4)"></button>
+  <button class="dot" onclick="go(5)"></button>
+  <button class="dot" onclick="go(6)"></button>
+</div>
+
+<div id="stage">
+
+<!-- ═══ S0: TITLE ═══ -->
+<div id="s0" class="scene active">
+  <div class="scene-tag">PI/CI Automation &nbsp;·&nbsp; MCN-2645-1055 &nbsp;·&nbsp; Impact ID-675058</div>
+  <div class="title-wrap">
+    <div class="eyebrow">Clearing Automation</div>
+    <div class="big">Elimination of<br><span class="r">Manual</span> <span class="g">Cross-Booking</span></div>
+    <div class="accent-line"></div>
+    <div class="sub">SSI Correction &nbsp;·&nbsp; EFGB Booking System &nbsp;·&nbsp; Nostro Reconciliation</div>
+    <div class="tags">
+      <span class="chip blue">Euroclear Netherlands</span>
+      <span class="chip red">Brussels Misposting</span>
+      <span class="chip green">1.21 FTE Saved</span>
+      <span class="chip amber">~5 hrs / day eliminated</span>
+    </div>
+  </div>
+  <div class="meta-grid">
+    <div class="meta-card">
+      <div class="mc-label">Associate</div>
+      <div class="mc-val">Pranav Srivastava</div>
+    </div>
+    <div class="meta-card">
+      <div class="mc-label">Tower · Location</div>
+      <div class="mc-val">Reconciliation · Gurgaon</div>
+    </div>
+    <div class="meta-card">
+      <div class="mc-label">Live Since</div>
+      <div class="mc-val">January 2025</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ S1: PROBLEM ═══ -->
+<div id="s1" class="scene">
+  <div class="scene-tag">The Problem</div>
+  <div class="flow-wrap">
+    <div class="isin-box">
+      <div class="isin-label">ISINs</div>
+      <div class="isin-tags">
+        <div class="isin-tag">NL0009538784</div>
+        <div class="isin-tag">NL0011821202</div>
+        <div class="isin-tag">NL0012650535</div>
+      </div>
+      <div style="font-size:9px;color:var(--muted);margin-top:6px;text-align:center;line-height:1.5;">Euroclear Netherlands<br>trades via EFGB</div>
+    </div>
+    <div class="arrows-col">
+      <div class="arrow-row" style="position:relative;">
+        <div class="arrow-line correct">
+          <span class="a-label" style="color:rgba(93,220,154,0.6);">✓ should settle here (dashed = intended)</span>
+        </div>
+      </div>
+      <div class="arrow-row" style="position:relative;">
+        <div class="arrow-line wrong">
+          <span class="a-label" style="color:var(--red);">✗ actually settling here — SSI incorrect</span>
+        </div>
+      </div>
+    </div>
+    <div class="nostros">
+      <div class="node green" style="width:190px;">
+        <div class="node-icon">🇳🇱</div>
+        <div class="node-title">Euroclear Netherlands</div>
+        <div class="node-sub">correct nostro account</div>
+      </div>
+      <div class="node red" style="width:190px;">
+        <div class="node-icon">🇧🇪</div>
+        <div class="node-title">Euroclear Brussels</div>
+        <div class="node-sub">wrong nostro account</div>
+      </div>
+    </div>
+  </div>
+  <div class="particle p-wrong"></div>
+  <div class="particle p-faint"></div>
+  <div class="problem-bullets">
+    <div class="pb"><span class="pb-icon">✗</span> Incorrect SSI for select ISINs in EFGB caused trades in Euroclear Netherlands to settle in Euroclear Brussels</div>
+    <div class="pb"><span class="pb-icon">✗</span> Required manual cross-booking between two Nostro accounts daily · process consumed 0.61 FTE (~5 hours daily)</div>
+  </div>
+</div>
+
+<!-- ═══ S2: WORKAROUND ═══ -->
+<div id="s2" class="scene">
+  <div class="scene-tag">The Manual Workaround &amp; Volume Impact</div>
+  <div class="wa-wrap">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="nostro-col">
+        <div class="node green" style="width:150px;">
+          <div class="node-icon">🇳🇱</div>
+          <div class="node-title">Euroclear Netherlands</div>
+          <div class="node-sub">NL nostro</div>
+        </div>
+        <div class="node red" style="width:150px;">
+          <div class="node-icon">🇧🇪</div>
+          <div class="node-title">Euroclear Brussels</div>
+          <div class="node-sub">BE nostro</div>
+        </div>
+      </div>
+      <div class="bridge">
+        <div class="bridge-line"></div>
+        <div style="font-size:8px;color:var(--amber);font-family:'DM Mono',monospace;letter-spacing:0.06em;writing-mode:vertical-rl;transform:rotate(180deg);">manual cross-book</div>
+        <div class="bridge-line"></div>
+      </div>
+    </div>
+    <div class="h-line"></div>
+    <div class="cost-box">
+      <div class="cost-title">Daily Manual Effort</div>
+      <div class="cost-big">~5</div>
+      <div class="cost-unit">hours per day</div>
+      <div class="cost-div"></div>
+      <div class="fte-badge">0.61 FTE</div>
+      <div class="cost-unit">clearing process</div>
+      <div class="cost-div"></div>
+      <div class="fte-badge" style="font-size:22px;">+ 0.60 FTE</div>
+      <div class="cost-unit">CTV / manual payments</div>
+      <div class="cost-div"></div>
+      <div class="fte-badge" style="color:var(--red);">= 1.21 FTE</div>
+      <div class="cost-unit" style="color:var(--red);">total absorbed</div>
+    </div>
+    <div class="h-line"></div>
+    <div class="vol-box">
+      <div class="vol-title">Cross-Booking Volumes</div>
+      <div class="vol-bars" id="vol-bars">
+        <div class="bar-wrap">
+          <div class="bar-val" style="color:var(--red);">3657</div>
+          <div class="bar" style="height:70px;background:rgba(248,112,112,0.55);border:1px solid var(--red-border);"></div>
+          <div class="bar-mon">Oct-24</div>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar-val" style="color:var(--red);">3250</div>
+          <div class="bar" style="height:62px;background:rgba(248,112,112,0.45);border:1px solid var(--red-border);"></div>
+          <div class="bar-mon">Nov-24</div>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar-val" style="color:var(--amber);">1474</div>
+          <div class="bar" style="height:28px;background:rgba(249,200,74,0.4);border:1px solid var(--amber-border);"></div>
+          <div class="bar-mon">Dec-24</div>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar-val" style="color:var(--green);">0</div>
+          <div class="bar" style="height:4px;background:rgba(93,220,154,0.5);border:1px solid var(--green-border);border-radius:2px;"></div>
+          <div class="bar-mon">Jan-25</div>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar-val" style="color:var(--green);">0</div>
+          <div class="bar" style="height:4px;background:rgba(93,220,154,0.5);border:1px solid var(--green-border);border-radius:2px;"></div>
+          <div class="bar-mon">Feb-25</div>
+        </div>
+      </div>
+      <div style="font-size:8px;color:var(--green);text-align:center;font-family:'DM Mono',monospace;">Go-live Jan 2025 → zero cross-bookings</div>
+    </div>
+  </div>
+  <div class="particle p-cross-a"></div>
+  <div class="particle p-cross-b"></div>
+  <div style="margin-top:20px;" class="chip red">⚠ Reconciliation team also managed open breaks in two custodian ledgers — manually, daily</div>
+</div>
+
+<!-- ═══ S3: FIX ═══ -->
+<div id="s3" class="scene">
+  <div class="scene-tag">How We Fixed It</div>
+  <div class="steps">
+    <div class="step step-item" id="step0">
+      <div class="step-icon blue">🔍</div>
+      <div class="step-label">Deep Dive</div>
+      <div class="step-sub">Traced root cause in EFGB automated booking flow</div>
+    </div>
+    <div class="conn-h"><div class="line"></div></div>
+    <div class="step step-item" id="step1">
+      <div class="step-icon amber">📋</div>
+      <div class="step-label">Identified ISINs</div>
+      <div class="step-sub">All ISINs with incorrect SSI mapping listed</div>
+    </div>
+    <div class="conn-h"><div class="line"></div></div>
+    <div class="step step-item" id="step2">
+      <div class="step-icon purple">📡</div>
+      <div class="step-label">Onshore Escalation</div>
+      <div class="step-sub">Flagged to onshore team with evidence &amp; recommendation</div>
+    </div>
+    <div class="conn-h"><div class="line"></div></div>
+    <div class="step step-item" id="step3">
+      <div class="step-icon amber">🧪</div>
+      <div class="step-label">Testing &amp; Approval</div>
+      <div class="step-sub">Solution tested, client approval obtained</div>
+    </div>
+    <div class="conn-h"><div class="line"></div></div>
+    <div class="step step-item" id="step4">
+      <div class="step-icon green">✅</div>
+      <div class="step-label">SSI Corrected</div>
+      <div class="step-sub">EFGB updated — trades flow to right nostro from Jan 2025</div>
+    </div>
+  </div>
+  <div class="sol-bullets step-item" id="step5">
+    <div class="sol-chip">Automated booking via EFGB client system</div>
+    <div class="sol-chip">Order booking &amp; settlement in same Nostro account</div>
+    <div class="sol-chip">Eliminated manual cross-booking entirely</div>
+    <div class="sol-chip">Reduced operational risk</div>
+  </div>
+  <div class="fix-banner step-item" id="step6">
+    ✓ &nbsp;Trades now settle in Euroclear Netherlands automatically — zero manual touch required
+  </div>
+</div>
+
+<!-- ═══ S4: AFTER ═══ -->
+<div id="s4" class="scene">
+  <div class="scene-tag">After the Fix — Correct Settlement Flow</div>
+  <div class="flow-wrap">
+    <div class="isin-box">
+      <div class="isin-label" style="color:var(--green);">ISINs</div>
+      <div class="isin-tags">
+        <div class="isin-tag" style="color:var(--green);border-color:var(--green-border);background:rgba(93,220,154,0.08);">NL0009538784</div>
+        <div class="isin-tag" style="color:var(--green);border-color:var(--green-border);background:rgba(93,220,154,0.08);">NL0011821202</div>
+        <div class="isin-tag" style="color:var(--green);border-color:var(--green-border);background:rgba(93,220,154,0.08);">NL0012650535</div>
+      </div>
+      <div style="font-size:9px;color:var(--green);margin-top:6px;text-align:center;opacity:0.8;">SSI corrected in EFGB</div>
+    </div>
+    <div style="flex:1;padding:0 16px;">
+      <div style="display:flex;align-items:center;">
+        <div style="flex:1;height:2px;background:linear-gradient(90deg,transparent,var(--green));position:relative;">
+          <span style="position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--green);font-family:'DM Mono',monospace;white-space:nowrap;">✓ automated settlement — no manual step</span>
+          <div style="position:absolute;right:-1px;top:-6px;border:7px solid transparent;border-left-color:var(--green);"></div>
+        </div>
+      </div>
+    </div>
+    <div class="nostros">
+      <div class="node green" style="width:190px;">
+        <div class="node-icon">🇳🇱</div>
+        <div class="node-title">Euroclear Netherlands</div>
+        <div class="node-sub" style="color:var(--green);opacity:0.9;">✓ settling correctly</div>
+      </div>
+      <div class="node dim" style="width:190px;">
+        <div class="node-icon">🇧🇪</div>
+        <div class="node-title">Euroclear Brussels</div>
+        <div class="node-sub">no longer affected</div>
+      </div>
+    </div>
+  </div>
+  <div class="particle p-good"></div>
+  <div class="particle p-good2"></div>
+  <div style="margin-top:26px;display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">
+    <span class="chip green">✓ Zero cross-bookings since Jan 2025</span>
+    <span class="chip green">✓ Aligned order booking &amp; settlement</span>
+    <span class="chip green">✓ Improved SO Recon &amp; Manual Payments</span>
+  </div>
+</div>
+
+<!-- ═══ S5: CHART ═══ -->
+<div id="s5" class="scene">
+  <div class="scene-tag">Cross-Booking Volumes — Before &amp; After</div>
+  <div class="chart-wrap">
+    <canvas id="myChart" height="320"></canvas>
+  </div>
+  <div class="chart-note">Implementation date: January 2025 &nbsp;·&nbsp; Zero cross-bookings maintained from go-live</div>
+</div>
+
+<!-- ═══ S6: RESULTS ═══ -->
+<div id="s6" class="scene">
+  <div class="result-super">Impact Summary</div>
+  <div class="result-head">Process Fixed. <span>Time Reclaimed.</span></div>
+  <div class="cards">
+    <div class="rcard green" id="rc0">
+      <div class="card-val green">1.21</div>
+      <div class="card-label">FTE Saved<br>Total</div>
+    </div>
+    <div class="rcard amber" id="rc1">
+      <div class="card-val amber">~5 hrs</div>
+      <div class="card-label">Daily Effort<br>Eliminated</div>
+    </div>
+    <div class="rcard blue" id="rc2">
+      <div class="card-val blue">0</div>
+      <div class="card-label">Cross-Bookings<br>Since Jan 2025</div>
+    </div>
+    <div class="rcard red" id="rc3">
+      <div class="card-val red" style="font-size:24px;">8,381</div>
+      <div class="card-label">Manual Bookings<br>Eliminated (Oct–Dec)</div>
+    </div>
+  </div>
+  <div class="client-quote" id="cq">
+    "It's great to hear that you've saved 0.61 FTE by eliminating manual cross booking in Clearing. The additional 0.60 FTE saved by having the CTV bookings processed by the manual payments team is a great bonus. A total of 1.21 FTE saved for the bank – that's really good."
+    <div class="client-name">— Brigitte Klaver &nbsp;·&nbsp; Client Acknowledgement &amp; Approval</div>
+  </div>
+</div>
+
+</div><!-- /stage -->
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+  const scenes = document.querySelectorAll('.scene');
+  const dots   = document.querySelectorAll('.dot');
+  const total  = scenes.length;
+  let cur = 0;
+  let autoTimer;
+  let chartBuilt = false;
+
+  function go(n) {
+    scenes[cur].classList.remove('active');
+    scenes[cur].classList.add('exit-left');
+    dots[cur].classList.remove('active');
+    setTimeout(() => scenes[cur].classList.remove('exit-left'), 600);
+    cur = ((n % total) + total) % total;
+    scenes[cur].classList.add('active');
+    dots[cur].classList.add('active');
+    document.getElementById('counter').textContent = (cur + 1) + ' / ' + total;
+    document.getElementById('progress-bar').style.width = ((cur / (total - 1)) * 100) + '%';
+    onEnter(cur);
+  }
+
+  function onEnter(n) {
+    if (n === 3) {
+      ['step0','step1','step2','step3','step4','step5','step6'].forEach((id, i) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.remove('show');
+        setTimeout(() => el.classList.add('show'), 120 + i * 220);
+      });
+    }
+    if (n === 5 && !chartBuilt) {
+      buildChart();
+      chartBuilt = true;
+    }
+    if (n === 6) {
+      ['rc0','rc1','rc2','rc3'].forEach((id, i) => {
+        const el = document.getElementById(id);
+        el.classList.remove('show');
+        setTimeout(() => el.classList.add('show'), 100 + i * 180);
+      });
+      const cq = document.getElementById('cq');
+      cq.classList.remove('show');
+      setTimeout(() => cq.classList.add('show'), 850);
+    }
+  }
+
+  function buildChart() {
+    const ctx = document.getElementById('myChart').getContext('2d');
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: ['Oct 2024', 'Nov 2024', 'Dec 2024', 'Jan 2025', 'Feb 2025'],
+        datasets: [{
+          label: 'Cross-Booking Volume',
+          data: [3657, 3250, 1474, 0, 0],
+          backgroundColor: [
+            'rgba(248,112,112,0.55)',
+            'rgba(248,112,112,0.45)',
+            'rgba(249,200,74,0.45)',
+            'rgba(93,220,154,0.5)',
+            'rgba(93,220,154,0.5)'
+          ],
+          borderColor: [
+            'rgba(248,112,112,0.9)',
+            'rgba(248,112,112,0.75)',
+            'rgba(249,200,74,0.8)',
+            'rgba(93,220,154,0.9)',
+            'rgba(93,220,154,0.9)'
+          ],
+          borderWidth: 1,
+          borderRadius: 6,
+          borderSkipped: false
+        }]
+      },
+      options: {
+        responsive: true,
+        animation: { duration: 900, easing: 'easeOutQuart' },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(8,12,24,0.9)',
+            borderColor: 'rgba(255,255,255,0.1)',
+            borderWidth: 1,
+            titleColor: '#e8eaf0',
+            bodyColor: '#e8eaf0',
+            callbacks: {
+              label: ctx => ' ' + ctx.parsed.y.toLocaleString() + ' cross-bookings'
+            }
+          },
+          annotation: {}
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(255,255,255,0.05)' },
+            ticks: { color: 'rgba(232,234,240,0.55)', font: { family: "'DM Mono'", size: 12 } },
+            border: { color: 'rgba(255,255,255,0.08)' }
+          },
+          y: {
+            grid: { color: 'rgba(255,255,255,0.05)' },
+            ticks: { color: 'rgba(232,234,240,0.45)', font: { family: "'DM Mono'", size: 11 } },
+            border: { color: 'rgba(255,255,255,0.08)' },
+            beginAtZero: true
+          }
+        }
+      }
+    });
+
+    // Draw annotation line
+    setTimeout(() => {
+      const canvas = document.getElementById('myChart');
+      const c2 = canvas.getContext('2d');
+      const chart = Chart.getChart(canvas);
+      const xPos = chart.scales.x.getPixelForValue(2.5);
+      c2.save();
+      c2.setLineDash([6, 4]);
+      c2.strokeStyle = 'rgba(93,220,154,0.5)';
+      c2.lineWidth = 1.5;
+      c2.beginPath();
+      c2.moveTo(xPos, chart.scales.y.top);
+      c2.lineTo(xPos, chart.scales.y.bottom);
+      c2.stroke();
+      c2.restore();
+      c2.fillStyle = 'rgba(93,220,154,0.75)';
+      c2.font = '11px DM Mono, monospace';
+      c2.fillText('Go-live Jan 2025', xPos + 6, chart.scales.y.top + 16);
+    }, 950);
+  }
+
+  document.getElementById('btn-next').onclick = () => { clearInterval(autoTimer); go(cur + 1); };
+  document.getElementById('btn-prev').onclick = () => { clearInterval(autoTimer); go(cur - 1); };
+
+  document.addEventListener('keydown', e => {
+    if (['ArrowRight','ArrowDown',' '].includes(e.key)) { clearInterval(autoTimer); go(cur + 1); }
+    if (['ArrowLeft','ArrowUp'].includes(e.key))        { clearInterval(autoTimer); go(cur - 1); }
+  });
+
+  let hintHidden = false;
+  function hideHint() {
+    if (!hintHidden) { document.getElementById('kb-hint').classList.add('hidden'); hintHidden = true; }
+  }
+  document.addEventListener('keydown', hideHint);
+  document.addEventListener('click', hideHint);
+
+  autoTimer = setInterval(() => go(cur + 1), 5500);
+</script>
+</body>
+</html>
